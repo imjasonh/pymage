@@ -95,7 +95,7 @@ func buildCmd() *cobra.Command {
 	fs.StringArrayVar(&f.extras, "extra", nil, "enable a project optional-dependency group from uv.lock (repeatable)")
 	fs.StringVar(&f.pkg, "package", "", "build a single uv workspace member (by name)")
 	fs.StringArrayVar(&f.findLinks, "find-links", nil, "local wheel directory (optional; wheels are downloaded from the lock when omitted)")
-	fs.StringVar(&f.repo, "repo", "", "destination repository, pushed by digest, e.g. gcr.io/foo/bar (default: [tool.pymage] repo)")
+	fs.StringVar(&f.repo, "repo", "", "destination repository, pushed by digest, e.g. gcr.io/foo/bar (default: $PYMAGE_REPO or [tool.pymage] repo)")
 	fs.StringArrayVarP(&f.tags, "tag", "t", nil, "tag(s) to apply at --repo; tag component only, not a full reference (repeatable; default: [tool.pymage] tags or 'latest')")
 	fs.StringSliceVar(&f.platforms, "platform", nil, "target platform(s); repeatable or comma-separated, e.g. linux/amd64,linux/arm64 (multiple builds a multi-arch index)")
 	fs.StringVar(&f.pythonTag, "python", "", "interpreter version, e.g. python3.12 (default: auto-detected from the base image; if set, must match the base)")
@@ -342,7 +342,7 @@ func output(cmd *cobra.Command, f *buildFlags, nameOpts []name.Option, img v1.Im
 	}
 
 	if f.repo == "" {
-		return fmt.Errorf("no repo configured: set repo in [tool.pymage] or pass --repo (or use --push=false)")
+		return fmt.Errorf("no repo configured: set repo in [tool.pymage], set $PYMAGE_REPO, or pass --repo (or use --push=false)")
 	}
 	repo, err := name.NewRepository(f.repo, nameOpts...)
 	if err != nil {

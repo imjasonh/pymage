@@ -61,8 +61,9 @@ docker run "$(pymage build)"
 ```
 
 `-t/--tag` is the **tag component only**, never a full reference — the repo comes
-from `[tool.pymage] repo` (or `--repo`). If no `-t` is given it uses
-`[tool.pymage] tags`, defaulting to `latest`.
+from `--repo`, the `$PYMAGE_REPO` environment variable, or `[tool.pymage] repo`
+(in that order of precedence). If no `-t` is given it uses `[tool.pymage] tags`,
+defaulting to `latest`.
 
 ### Configuration
 
@@ -71,7 +72,7 @@ the config value, which overrides the built-in default.
 
 | Key | Flag | Default |
 | --- | --- | --- |
-| `repo` | `--repo` | *(required to push)* |
+| `repo` | `--repo` | `$PYMAGE_REPO`, else *(required to push)* |
 | `tags` | `-t`/`--tag` (repeatable) | `["latest"]` |
 | `base` | `--base` | `cgr.dev/chainguard/python:latest` |
 | `platforms` | `--platform` | the platforms the **base image** supports |

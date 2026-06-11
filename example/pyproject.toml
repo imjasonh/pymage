@@ -24,7 +24,7 @@ build-backend = "hatchling.build"
 packages = ["src/example"]
 
 [tool.pymage]
-repo = "ttl.sh/pymage"   # uncomment and set your destination registry
-base = "cgr.dev/chainguard/python:latest"
-platforms = ["linux/amd64", "linux/arm64"]
-layer-strategy = "per-wheel"
+repo = "ttl.sh/pymage"
+base = "cgr.dev/chainguard/python:latest"  # default
+platforms = ["linux/amd64", "linux/arm64"] # default
+layer-strategy = "auto"                    # default

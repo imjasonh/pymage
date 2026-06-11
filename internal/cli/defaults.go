@@ -18,7 +18,9 @@ import (
 // applyDefaults fills omitted flags from the uv project in the source directory
 // (the positional arg, default "."). Precedence is: explicit CLI flag >
 // [tool.pymage] in pyproject.toml >
-// built-in default. A flag counts as "explicit" only when the user actually
+// built-in default. (--repo additionally consults $PYMAGE_REPO, which sits
+// between the flag and [tool.pymage] repo.) A flag counts as "explicit" only
+// when the user actually
 // passed it, which we detect via cobra's Changed() so flags with non-empty
 // defaults (e.g. --workdir) can still be overridden by config.
 func applyDefaults(cmd *cobra.Command, f *buildFlags) error {
@@ -39,8 +41,15 @@ func applyDefaults(cmd *cobra.Command, f *buildFlags) error {
 		f.lockFile = proj.LockFile
 	}
 
-	if !changed("repo") && cfg.Repo != "" {
-		f.repo = cfg.Repo
+	// Repo precedence: explicit --repo flag > $PYMAGE_REPO > [tool.pymage] repo.
+	// The env var lets CI inject a destination registry without editing
+	// pyproject.toml, so repo isn't required there when PYMAGE_REPO is set.
+	if !changed("repo") {
+		if env := os.Getenv("PYMAGE_REPO"); env != "" {
+			f.repo = env
+		} else if cfg.Repo != "" {
+			f.repo = cfg.Repo
+		}
 	}
 	if !changed("tag") && len(cfg.Tags) > 0 {
 		f.tags = cfg.Tags
@@ -183,7 +192,7 @@ func validateBuildFlags(f *buildFlags) error {
 	}
 	if f.push {
 		if f.repo == "" {
-			return fmt.Errorf("no repo configured: set repo in [tool.pymage] (pyproject.toml) or pass --repo (or use --push=false)")
+			return fmt.Errorf("no repo configured: set repo in [tool.pymage] (pyproject.toml), set $PYMAGE_REPO, or pass --repo (or use --push=false)")
 		}
 		for _, t := range f.tags {
 			if strings.ContainsAny(t, "/:@") {

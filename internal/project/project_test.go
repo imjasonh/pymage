@@ -42,7 +42,7 @@ func TestDiscoverExample(t *testing.T) {
 	if got := info.Config.Platforms; len(got) != 2 || got[0] != "linux/amd64" || got[1] != "linux/arm64" {
 		t.Errorf("config platforms = %v", got)
 	}
-	if info.Config.LayerStrategy != "per-wheel" {
+	if info.Config.LayerStrategy != "auto" {
 		t.Errorf("config layer-strategy = %q", info.Config.LayerStrategy)
 	}
 }

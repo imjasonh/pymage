@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/spf13/cobra"
 
 	"github.com/imjasonh/terraform-playground/pymage/internal/cache"
 	"github.com/imjasonh/terraform-playground/pymage/internal/testwheel"
@@ -356,6 +357,83 @@ func TestPushRequiresRepo(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "repo") {
 		t.Fatalf("expected missing-repo error, got %v", err)
 	}
+}
+
+// TestRepoEnvPrecedence verifies repo resolution order in applyDefaults:
+// explicit --repo flag > $PYMAGE_REPO > [tool.pymage] repo.
+func TestRepoEnvPrecedence(t *testing.T) {
+	newCmd := func() (*cobra.Command, *buildFlags) {
+		f := &buildFlags{}
+		cmd := &cobra.Command{Use: "build"}
+		cmd.Flags().StringVar(&f.repo, "repo", "", "")
+		return cmd, f
+	}
+
+	writeProject := func(t *testing.T, configRepo string) string {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "requirements.txt"), []byte("\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		py := "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n"
+		if configRepo != "" {
+			py += fmt.Sprintf("\n[tool.pymage]\nrepo = %q\n", configRepo)
+		}
+		if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte(py), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+
+	t.Run("env fills repo when config is unset", func(t *testing.T) {
+		t.Setenv("PYMAGE_REPO", "env.example.com/app")
+		cmd, f := newCmd()
+		f.source = writeProject(t, "")
+		if err := applyDefaults(cmd, f); err != nil {
+			t.Fatal(err)
+		}
+		if f.repo != "env.example.com/app" {
+			t.Fatalf("repo = %q, want env value", f.repo)
+		}
+	})
+
+	t.Run("env overrides config", func(t *testing.T) {
+		t.Setenv("PYMAGE_REPO", "env.example.com/app")
+		cmd, f := newCmd()
+		f.source = writeProject(t, "config.example.com/app")
+		if err := applyDefaults(cmd, f); err != nil {
+			t.Fatal(err)
+		}
+		if f.repo != "env.example.com/app" {
+			t.Fatalf("repo = %q, want env to override config", f.repo)
+		}
+	})
+
+	t.Run("config used when env unset", func(t *testing.T) {
+		t.Setenv("PYMAGE_REPO", "")
+		cmd, f := newCmd()
+		f.source = writeProject(t, "config.example.com/app")
+		if err := applyDefaults(cmd, f); err != nil {
+			t.Fatal(err)
+		}
+		if f.repo != "config.example.com/app" {
+			t.Fatalf("repo = %q, want config value", f.repo)
+		}
+	})
+
+	t.Run("explicit flag beats env", func(t *testing.T) {
+		t.Setenv("PYMAGE_REPO", "env.example.com/app")
+		cmd, f := newCmd()
+		f.source = writeProject(t, "config.example.com/app")
+		if err := cmd.Flags().Set("repo", "flag.example.com/app"); err != nil {
+			t.Fatal(err)
+		}
+		if err := applyDefaults(cmd, f); err != nil {
+			t.Fatal(err)
+		}
+		if f.repo != "flag.example.com/app" {
+			t.Fatalf("repo = %q, want explicit flag value", f.repo)
+		}
+	})
 }
 
 // TestBuildStdoutIsImageRef checks the contract that `pymage build` prints
