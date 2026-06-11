@@ -147,6 +147,7 @@ func TestBuildDefaultsToBasePlatforms(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var stdout bytes.Buffer
 	cmd := Root()
 	cmd.SetArgs([]string{
 		"build", src,
@@ -156,13 +157,26 @@ func TestBuildDefaultsToBasePlatforms(t *testing.T) {
 		"--entrypoint", "python", "--entrypoint", "/app/app.py",
 		"--repo", host + "/app",
 		// no --platform: should default to the base's amd64 + arm64
+		// no -t: should push by digest only (no "latest" tag)
 	})
-	cmd.SetOut(os.Stderr)
+	cmd.SetOut(&stdout)
+	cmd.SetErr(os.Stderr)
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
 
-	ref, _ := name.ParseReference(host + "/app:latest")
+	// With no -t, nothing is tagged: "latest" must not exist.
+	latestRef, _ := name.ParseReference(host + "/app:latest")
+	if _, err := remote.Index(latestRef, remote.WithContext(ctx)); err == nil {
+		t.Fatal("expected no 'latest' tag when -t is omitted, but it exists")
+	}
+
+	// The artifact is reachable by the digest printed on stdout.
+	out := strings.TrimRight(stdout.String(), "\n")
+	ref, err := name.ParseReference(out)
+	if err != nil {
+		t.Fatalf("parse stdout ref %q: %v", out, err)
+	}
 	idx, err := remote.Index(ref, remote.WithContext(ctx))
 	if err != nil {
 		t.Fatalf("expected a multi-arch index by default: %v", err)

@@ -96,7 +96,7 @@ func buildCmd() *cobra.Command {
 	fs.StringVar(&f.pkg, "package", "", "build a single uv workspace member (by name)")
 	fs.StringArrayVar(&f.findLinks, "find-links", nil, "local wheel directory (optional; wheels are downloaded from the lock when omitted)")
 	fs.StringVar(&f.repo, "repo", "", "destination repository, pushed by digest, e.g. gcr.io/foo/bar (default: $PYMAGE_REPO or [tool.pymage] repo)")
-	fs.StringArrayVarP(&f.tags, "tag", "t", nil, "tag(s) to apply at --repo; tag component only, not a full reference (repeatable; default: [tool.pymage] tags or 'latest')")
+	fs.StringArrayVarP(&f.tags, "tag", "t", nil, "tag(s) to apply at --repo; tag component only, not a full reference (repeatable; default: [tool.pymage] tags, else push by digest only)")
 	fs.StringSliceVar(&f.platforms, "platform", nil, "target platform(s); repeatable or comma-separated, e.g. linux/amd64,linux/arm64 (multiple builds a multi-arch index)")
 	fs.StringVar(&f.pythonTag, "python", "", "interpreter version, e.g. python3.12 (default: auto-detected from the base image; if set, must match the base)")
 	fs.StringVar(&f.prefix, "prefix", "/app/.venv", "install prefix (venv-like root)")
@@ -348,11 +348,6 @@ func output(cmd *cobra.Command, f *buildFlags, nameOpts []name.Option, img v1.Im
 	if err != nil {
 		return err
 	}
-	tags := f.tags
-	if len(tags) == 0 {
-		tags = []string{"latest"}
-	}
-
 	var artifact remote.Taggable = img
 	if idx != nil {
 		artifact = idx
@@ -368,9 +363,19 @@ func output(cmd *cobra.Command, f *buildFlags, nameOpts []name.Option, img v1.Im
 	if err != nil {
 		return err
 	}
+
+	if len(f.tags) == 0 {
+		// No tag specified: push by digest only, leaving no mutable tag (not
+		// even "latest") pointing at the artifact.
+		ref := repo.Digest(digest.String())
+		if err := pusher.Push(ctx, ref, artifact); err != nil {
+			return fmt.Errorf("push %s: %w", ref, err)
+		}
+		_, _ = fmt.Fprintf(stderr, "pushed %s@%s\n", repo.Name(), digest)
+	}
 	// The artifact is pushed by content; each tag is just another pointer to
 	// the same digest.
-	for _, t := range tags {
+	for _, t := range f.tags {
 		ref := repo.Tag(t)
 		if err := pusher.Push(ctx, ref, artifact); err != nil {
 			return fmt.Errorf("push %s: %w", ref, err)
