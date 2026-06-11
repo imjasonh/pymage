@@ -24,7 +24,15 @@ Bumping one dependency re-uploads a single ~11 MB layer instead of re-pushing th
 See [`docs/ai-image-comparison.md`](./docs/ai-image-comparison.md). For pure-wheel
 web apps see [`docs/real-world-comparison.md`](./docs/real-world-comparison.md).
 
-## Usage (uv projects)
+## Installation
+
+```
+go install github.com/imjasonh/pymage@latest
+```
+
+(TODO: real releases, if anybody wants them)
+
+## Usage
 
 pymage is designed for projects that use [`uv`](https://docs.astral.sh/uv/). Configure it
 once in `pyproject.toml`:
@@ -202,30 +210,6 @@ A floating tag such as `cgr.dev/chainguard/python:latest` works, but be aware:
 Detection looks at the `PYTHON_VERSION` env var (for official Python images) and, when that's absent, the `python-X.Y` package in `/etc/apko.json` from the top layer (Chainguard/Wolfi images).
 
 Bases that expose neither signal can't be auto-detected -- pass `--python` explicitly, or pin a base that advertises its version.
-
-### CLI flags
-
-| Flag | Description |
-| --- | --- |
-| `--push=false` | Build without pushing (combine with `--oci-layout`). |
-| `--oci-layout DIR` | Also write the image to an OCI layout directory. |
-| `--print-digest` | Print only the resulting image digest (no push). |
-| `--sbom PATH` | Write a CycloneDX SBOM of the resolved wheels. |
-| `--layer-strategy` | `auto` (default), `per-wheel`, or `single-deps-layer`. |
-| `--max-layers` | Cap on total image layers (base + deps + app) for `auto` (default 127). |
-| `--max-wheel-layers` | Cap the dependency layer count directly (overrides `--max-layers`). |
-| `--push-concurrency` | Max concurrent layer uploads when pushing (0 = auto). |
-| `--platform` | Target platform(s); selects compatible wheels and base. Repeatable / comma-separated (e.g. `linux/amd64,linux/arm64`) builds a multi-arch image index. Defaults to the platforms the base image supports. |
-| `--python` | Interpreter version, e.g. `python3.12`. Optional -- **auto-detected from the base** when omitted; if set, must match the base. Drives wheel selection and the site-packages layout. |
-| `--extra` | Enable a uv project optional-dependency group (repeatable). |
-| `--package` | Build a single uv workspace member by name (default: union of all members). |
-| `--cache-dir` | Cache root (default: `$PYMAGE_CACHE_DIR` or the per-user cache dir). Caches compressed layers, downloaded wheels, and base interpreter detection. |
-| `--no-cache` | Disable all caching (layers, downloaded wheels, interpreter detection). |
-| `--prefix` | install prefix / venv root (default `/app/.venv`). |
-| `--workdir` | image working dir and source destination (default `/app`). |
-| `--user` | image user, e.g. `65532`. |
-| `--insecure` | use plain HTTP for the registry. |
-| `--require-hashes` | require `--hash` on every requirement in `requirements.txt` (default true; `uv.lock` carries its own hashes). |
 
 ## Acknowledgements
 
