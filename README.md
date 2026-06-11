@@ -12,6 +12,8 @@ It's built in the spirit of [`ko`](https://ko.build) for Go, [`jib`](https://git
 
 Like `jib` and unlike `ko` and `krust`, `pymage` splits Python dependencies into separate layers, separate from the application code, so changing your code without changing a dependency only updates one layer, and updating a dependency only updates one layer. If your base image changes, only those layers are updated. And if nothing changes, there's nothing to do!
 
+This has benefits at both push-time and pull-time -- when a Kubernetes node already running `:v1.2.3` pulls `:v1.2.4`, only the new layers will need to be fetched. This can have significant benefit for deployment times, and registry storage and egress costs.
+
 `pymage` doesn't run containers to perform the build, it just writes application source code to the registry, and copies dependencies' existing compiled wheels to the registry. If any dependency doesn't have an available wheel for the specified platform(s), the build fails. `pymage` will never run any code at build-time.
 
 Because `pymage` is just moving wheels around, it supports multi-platform builds by just moving those platforms' wheels around. `pymage` runs on Linux, macOS and Windows.
