@@ -1,0 +1,243 @@
+name: pymage
+
+on:
+  pull_request:
+    branches: ['main']
+  push:
+    branches: ['main']
+
+jobs:
+  ci:
+    # Runs on Linux, macOS, and Windows to prove pymage can build a multi-arch
+    # *linux* image index from any host OS (it never needs a Docker daemon to
+    # build).
+    #
+    # We then RUN the built image with Docker on Linux and macOS. The macOS
+    # runner is Intel (macos-15-intel) on purpose: GitHub's Apple-silicon macOS
+    # runners can't run Docker/Colima (no nested virtualization), whereas Intel
+    # macOS runners can. Windows hosts can't run Linux containers, so the run is
+    # skipped there.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      REGISTRY: localhost:1338
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.2.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+
+      - name: Run tests
+        run: go test -race ./...
+
+      - name: Run golangci-lint
+        if: runner.os == 'Linux'
+        uses: golangci/golangci-lint-action@v9.2.0
+        with:
+          version: latest
+
+      - name: Verify example uv.lock is up to date
+        working-directory: example
+        run: uv lock --check
+
+      - name: Install crane
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@v0.19.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Start a local registry (in-memory, cross-platform)
+        run: |
+          crane registry serve --address "$REGISTRY" &
+          for _ in $(seq 1 30); do
+            curl -fsS "http://$REGISTRY/v2/" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS "http://$REGISTRY/v2/" >/dev/null
+
+      # base + platforms come from [tool.pymage] in example/pyproject.toml; only
+      # the destination repo (--repo) and tag (-t) are supplied here.
+      - name: Build & push the example uv project (multi-arch)
+        run: |
+          set -euo pipefail
+          go run . build ./example \
+            --repo "$REGISTRY/example" \
+            -t multi \
+            --insecure
+
+      - name: Verify the pushed artifact is a multi-arch index
+        run: |
+          set -euo pipefail
+          crane manifest --insecure "$REGISTRY/example:multi" > manifest.json
+          cat manifest.json
+          python3 - <<'PY'
+          import json
+          m = json.load(open("manifest.json"))
+          plats = {f"{x['platform']['os']}/{x['platform']['architecture']}" for x in m.get("manifests", [])}
+          print("platforms:", plats)
+          assert "linux/amd64" in plats, plats
+          assert "linux/arm64" in plats, plats
+          print("multi-arch index OK")
+          PY
+
+      - name: Verify the multi-arch build is reproducible
+        run: |
+          set -euo pipefail
+          common=(./example --platform linux/amd64,linux/arm64 --insecure --push=false)
+          d1=$(go run . build "${common[@]}" --print-digest)
+          d2=$(go run . build "${common[@]}" --print-digest)
+          echo "digest #1: $d1"
+          echo "digest #2: $d2"
+          if [ "$d1" != "$d2" ]; then
+            echo "::error::multi-arch build is not reproducible: $d1 != $d2"
+            exit 1
+          fi
+          echo "reproducible: $d1"
+
+      # Running the built image needs a Docker daemon. Linux runners have one;
+      # on the Intel macOS runner we install Docker (Colima). Windows can't run
+      # Linux containers, so this is skipped there.
+      - name: Set up Docker (macOS)
+        if: runner.os == 'macOS'
+        uses: docker/setup-docker-action@v5
+
+      - name: Run the example image with Docker
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          arch=$(go env GOARCH)
+          # crane runs on the host and can reach the host registry; we load the
+          # image into the daemon so we don't depend on the daemon (a VM on
+          # macOS) being able to reach the host's localhost registry.
+          crane pull --insecure --platform "linux/$arch" "$REGISTRY/example:multi" /tmp/example.tar
+          loaded=$(docker load -i /tmp/example.tar | sed -E 's/^Loaded image( ID)?: //' | tail -1)
+          echo "loaded image: $loaded"
+          cid=$(docker run -d -p 18080:8080 "$loaded")
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18080/healthz | grep -q healthy
+
+      - name: Layer reuse with a local wheelhouse (one new layer per dep)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p demo/wheelhouse demo/src
+          cat > demo/src/app.py <<'PY'
+          import click
+          import six
+          print("pymage demo OK | six=%s click=%s" % (six.__version__, click.__version__))
+          PY
+          python3 -m pip install --upgrade pip
+          pip download --no-deps --only-binary=:all: \
+            six==1.16.0 click==8.1.7 -d demo/wheelhouse
+          python3 - <<'PY'
+          import glob, hashlib, os
+          lines = []
+          for whl in sorted(glob.glob("demo/wheelhouse/*.whl")):
+              parts = os.path.basename(whl)[:-4].split("-")
+              name, version = parts[0], parts[1]
+              digest = hashlib.sha256(open(whl, "rb").read()).hexdigest()
+              lines.append(f"{name}=={version} --hash=sha256:{digest}")
+          open("demo/requirements.txt", "w").write("\n".join(lines) + "\n")
+          PY
+          common=(demo/src --base python:3.12-slim --platform linux/amd64 --lock demo/requirements.txt \
+                  --find-links demo/wheelhouse \
+                  --entrypoint python --entrypoint /app/app.py --insecure --repo "$REGISTRY/demo")
+          go run . build "${common[@]}" -t v1
+          pip download --no-deps --only-binary=:all: idna==3.7 -d demo/wheelhouse
+          python3 - <<'PY'
+          import glob, hashlib
+          whl = sorted(glob.glob("demo/wheelhouse/idna-*.whl"))[0]
+          digest = hashlib.sha256(open(whl, "rb").read()).hexdigest()
+          open("demo/requirements.txt", "a").write(f"idna==3.7 --hash=sha256:{digest}\n")
+          PY
+          go run . build "${common[@]}" -t v2
+          crane manifest --insecure "$REGISTRY/demo:v1" | jq -r '.layers[].digest' | sort > v1.layers
+          crane manifest --insecure "$REGISTRY/demo:v2" | jq -r '.layers[].digest' | sort > v2.layers
+          if [ -n "$(comm -23 v1.layers v2.layers || true)" ]; then
+            echo "::error::a v1 layer changed/disappeared in v2 (should be reused)"
+            exit 1
+          fi
+          n1=$(wc -l < v1.layers)
+          n2=$(wc -l < v2.layers)
+          if [ "$n2" -ne "$((n1 + 1))" ]; then
+            echo "::error::expected exactly one new layer, got $n1 -> $n2"
+            exit 1
+          fi
+          echo "Confirmed: adding a dependency reused all existing layers and added exactly one."
+
+      # Build a real uv project with *compiled* wheels (numpy, pydantic-core) and
+      # a console-script package, then actually run the image: import the native
+      # extensions, read installed metadata, and check the generated launcher.
+      # This exercises the `uv export` resolution path and install fidelity
+      # end-to-end against a real Docker runtime.
+      - name: Build & run a real uv project (compiled wheels + metadata)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          rm -rf realapp && mkdir -p realapp/src/realapp
+          cat > realapp/pyproject.toml <<'TOML'
+          [project]
+          name = "realapp"
+          version = "0.1.0"
+          requires-python = ">=3.12,<3.13"
+          dependencies = ["numpy==2.1.3", "pydantic==2.9.2", "rich==13.9.4", "cowsay==6.1"]
+
+          [dependency-groups]
+          dev = ["ruff==0.7.4"]
+
+          [build-system]
+          requires = ["hatchling"]
+          build-backend = "hatchling.build"
+          TOML
+          echo "" > realapp/src/realapp/__init__.py
+          uv lock --project realapp
+          go run . build ./realapp \
+            --base python:3.12-slim --platform linux/amd64 \
+            --repo "$REGISTRY/realapp" -t v1 --insecure \
+            --entrypoint python --entrypoint -c --entrypoint "print('ok')"
+
+          # dev-group tool must NOT be in the image (uv export --no-dev)
+          if crane manifest --insecure "$REGISTRY/realapp:v1" \
+              | jq -r '.layers[].annotations["dev.pymage.wheels"] // empty' | grep -qi '^ruff=='; then
+            echo "::error::dev dependency 'ruff' leaked into the runtime image"
+            exit 1
+          fi
+
+          crane pull --insecure --platform linux/amd64 "$REGISTRY/realapp:v1" /tmp/realapp.tar
+          loaded=$(docker load -i /tmp/realapp.tar | sed -E 's/^Loaded image( ID)?: //' | tail -1)
+          echo "loaded image: $loaded"
+
+          # Import compiled extensions, exercise them, and read installed metadata.
+          docker run --rm --entrypoint python "$loaded" -c "
+          import numpy as np, pydantic, rich            # compiled + pure imports
+          assert np.zeros(3).sum() == 0.0               # runs the numpy C ext
+          from pydantic import BaseModel
+          class M(BaseModel):
+              x: int
+          assert M(x=2).x == 2                          # runs pydantic-core (Rust ext)
+          import importlib.metadata as md
+          for p in ('numpy', 'pydantic', 'rich', 'cowsay'):
+              print(p, md.version(p))                   # installed metadata present
+          assert 'ruff' not in {d.metadata['Name'].lower() for d in md.distributions()}
+          print('runtime import + metadata OK')
+          "
+
+          # The console-script launcher was generated and is a valid script.
+          docker run --rm --entrypoint sh "$loaded" -c \
+            'ls /app/.venv/bin && test -s /app/.venv/bin/cowsay && head -1 /app/.venv/bin/cowsay'
+          echo "Confirmed: compiled wheels import, metadata is present, dev tools excluded, launcher generated."
