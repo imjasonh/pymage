@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Go module dependencies: one grouped PR for all bumps.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go:
+        patterns:
+          - "*"
+
+  # GitHub Actions: one grouped PR for all bumps. Actions are pinned to commit
+  # SHAs in the workflows; dependabot updates the SHA and the trailing version
+  # comment together.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
