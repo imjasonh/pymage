@@ -25,7 +25,7 @@ once in `pyproject.toml`:
 
 ```toml
 [tool.pymage]
-repo = "registry.example.com/me/myapp"   # pushed by digest
+repo = "registry.example.com/me/myapp"
 ```
 
 Then, from the project root:
@@ -178,7 +178,7 @@ need at runtime beyond the interpreter and pure-Python code, including:
 Choose (or build) a base that bundles these. For Debian-style bases that means a
 variant with the libraries preinstalled; for Chainguard/Wolfi, compose a base
 with the needed `apk` packages. If a dependency needs a system library the base
-lacks, the image builds fine but **fails at runtime** -- pymage can't add `apt`/`apk`
+lacks, the image builds fine but **fails at runtime** -- `pymage`can't add `apt`/`apk`
 packages for you.
 
 ### Choosing a base image
