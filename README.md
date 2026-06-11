@@ -4,6 +4,8 @@
 
 _[Pym discs](https://marvel.fandom.com/wiki/Pym_Discs) make things smaller._
 
+[![pymage](https://github.com/imjasonh/pymage/actions/workflows/ci.yaml/badge.svg)](https://github.com/imjasonh/pymage/actions/workflows/ci.yaml)
+
 `pymage` is a dockerless, unprivileged, layer-aware and fast container image builder for Python applications using `uv`.
 
 It's built in the spirit of [`ko`](https://ko.build) for Go, [`jib`](https://github.com/googlecontainertools/jib) for Java, [`krust`](https://github.com/imjasonh/krust) for Rust and others.
