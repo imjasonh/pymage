@@ -220,3 +220,7 @@ Bases that expose neither signal can't be auto-detected -- pass `--python` expli
 | `--user` | image user, e.g. `65532`. |
 | `--insecure` | use plain HTTP for the registry. |
 | `--require-hashes` | require `--hash` on every requirement in `requirements.txt` (default true; `uv.lock` carries its own hashes). |
+
+## Acknowledgements
+
+The idea of building Python images this way dates back almost ten years, to [**@mattmoor**](http://github.com/mattmoor), [`rules_docker`](https://www.youtube.com/watch?v=lviLZFciDv4) and a project called FTL ("Faster than Light"). This concept was what demystified container images for me ("they're just tarballs and JSON?!!") and changed my whole career, hopefully for the better. This project is just a resurrection of that project for a more civilized time.
