@@ -3,8 +3,8 @@ module github.com/imjasonh/terraform-playground/pymage
 go 1.25.0
 
 require (
-	github.com/google/go-containerregistry v0.21.6
-	github.com/pelletier/go-toml/v2 v2.3.1
+	github.com/google/go-containerregistry v0.21.7
+	github.com/pelletier/go-toml/v2 v2.4.0
 	github.com/spf13/cobra v1.10.2
 )
 
